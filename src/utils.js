@@ -1,8 +1,13 @@
 import fs from "node:fs";
 import http from "node:http";
 import https from "node:https";
+import path from "node:path";
 import process from "node:process";
+import { pipeline } from "node:stream/promises";
 import { URL } from "node:url";
+
+import { extract } from "tar";
+import { open as openZip } from "yauzl-promise";
 
 /**
  * Download from `url` and save at `filePath`.
@@ -91,4 +96,98 @@ export function request(url, filePath) {
       writeStream.destroy();
     }
   });
+}
+
+/**
+ * Extract a `.tar.gz` archive into `destDir`.
+ * @param {string} archivePath
+ * @param {string} destDir
+ * @param {{ strip?: number }} [options]
+ * @returns {Promise<void>}
+ */
+export async function extractTarGz(archivePath, destDir, options = {}) {
+  await fs.promises.mkdir(destDir, { recursive: true });
+  await extract({
+    file: archivePath,
+    cwd: destDir,
+    strip: options.strip ?? 0,
+  });
+}
+
+/**
+ * Extract a `.zip` archive into `destDir`.
+ * @param {string} archivePath
+ * @param {string} destDir
+ * @param {{ strip?: number }} [options]
+ * @returns {Promise<void>}
+ */
+export async function extractZip(archivePath, destDir, options = {}) {
+  const strip = options.strip ?? 0;
+  const zip = await openZip(archivePath);
+
+  try {
+    for await (const entry of zip) {
+      const parts = entry.filename.split("/").slice(strip);
+      if (parts.length === 0 || parts.every((part) => part === "")) {
+        continue;
+      }
+
+      const outPath = path.resolve(destDir, ...parts);
+
+      if (entry.filename.endsWith("/")) {
+        await fs.promises.mkdir(outPath, { recursive: true });
+        continue;
+      }
+
+      await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
+      const readStream = await entry.openReadStream();
+      await pipeline(readStream, fs.createWriteStream(outPath));
+    }
+  } finally {
+    await zip.close();
+  }
+}
+
+/**
+ * @typedef {object} DevEngine
+ * @property {string}                     name
+ * @property {string}                     version
+ * @property {"error" | "warn" | "ignore"} [onFail]
+ */
+
+/**
+ * @typedef {object} DevEngines
+ * @property {DevEngine | DevEngine[]} [runtime]
+ * @property {DevEngine | DevEngine[]} [packageManager]
+ */
+
+/**
+ * Read `devEngines` from a project's `package.json`.
+ * @param {string} srcDir Directory containing the project's `package.json`
+ * @returns {DevEngines}
+ */
+export function getDevEngines(srcDir) {
+  const packageJsonPath = path.resolve(srcDir, "package.json");
+  if (!fs.existsSync(packageJsonPath)) {
+    return {};
+  }
+
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+
+  return packageJson.devEngines ?? {};
+}
+
+/**
+ * Normalize a `devEngines` field into an array, since each field may be a
+ * single object or an array of objects.
+ * @template T
+ * @param {T | T[] | undefined} field
+ * @returns {T[]}
+ */
+export function toArray(field) {
+  if (field === undefined) {
+    return [];
+  }
+
+  return Array.isArray(field) ? field : [field];
 }
