@@ -3,17 +3,20 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
+
 import * as tar from "tar";
 
 import {
   extractTarGz,
   extractZip,
+  fetchJson,
   getDevEngines,
   request,
+  setDevEnginesRuntime,
   toArray,
 } from "../../src/utils.js";
-import { createZipBuffer } from "../helpers/zip.js";
 import { startServer } from "../helpers/server.js";
+import { createZipBuffer } from "../helpers/zip.js";
 
 describe("toArray()", () => {
   it("returns an empty array for undefined", () => {
@@ -78,6 +81,100 @@ describe("getDevEngines()", () => {
   });
 });
 
+describe("setDevEnginesRuntime()", () => {
+  let tmpDir;
+
+  before(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "doctor-set-runtime-"));
+  });
+
+  after(() => {
+    fs.rmSync(tmpDir, { force: true, recursive: true });
+  });
+
+  it("adds devEngines.runtime when there was none", () => {
+    const dir = fs.mkdtempSync(path.join(tmpDir, "none-"));
+    fs.writeFileSync(
+      path.join(dir, "package.json"),
+      JSON.stringify({ name: "fixture" }),
+    );
+
+    setDevEnginesRuntime(dir, { name: "node", version: "26.1.0" });
+
+    assert.deepEqual(getDevEngines(dir), {
+      runtime: { name: "node", version: "26.1.0" },
+    });
+  });
+
+  it("overwrites an existing devEngines.runtime", () => {
+    const dir = fs.mkdtempSync(path.join(tmpDir, "overwrite-"));
+    fs.writeFileSync(
+      path.join(dir, "package.json"),
+      JSON.stringify({
+        devEngines: { runtime: { name: "deno", version: "1.0.0" } },
+        name: "fixture",
+      }),
+    );
+
+    setDevEnginesRuntime(dir, {
+      name: "node",
+      onFail: "warn",
+      version: "26.1.0",
+    });
+
+    assert.deepEqual(getDevEngines(dir).runtime, {
+      name: "node",
+      onFail: "warn",
+      version: "26.1.0",
+    });
+  });
+
+  it("leaves devEngines.packageManager and other package.json fields untouched", () => {
+    const dir = fs.mkdtempSync(path.join(tmpDir, "preserve-"));
+    fs.writeFileSync(
+      path.join(dir, "package.json"),
+      JSON.stringify({
+        dependencies: { semver: "^7.0.0" },
+        devEngines: {
+          packageManager: { name: "npm", version: "10.9.0" },
+          runtime: { name: "node", version: "20.0.0" },
+        },
+        name: "fixture",
+      }),
+    );
+
+    setDevEnginesRuntime(dir, { name: "node", version: "26.1.0" });
+
+    const packageJson = JSON.parse(
+      fs.readFileSync(path.join(dir, "package.json"), "utf8"),
+    );
+    assert.equal(packageJson.name, "fixture");
+    assert.deepEqual(packageJson.dependencies, { semver: "^7.0.0" });
+    assert.deepEqual(packageJson.devEngines.packageManager, {
+      name: "npm",
+      version: "10.9.0",
+    });
+    assert.deepEqual(packageJson.devEngines.runtime, {
+      name: "node",
+      version: "26.1.0",
+    });
+  });
+
+  it("writes valid, re-readable JSON", () => {
+    const dir = fs.mkdtempSync(path.join(tmpDir, "valid-json-"));
+    fs.writeFileSync(
+      path.join(dir, "package.json"),
+      JSON.stringify({ name: "fixture" }),
+    );
+
+    setDevEnginesRuntime(dir, { name: "node", version: "26.1.0" });
+
+    const raw = fs.readFileSync(path.join(dir, "package.json"), "utf8");
+    assert.doesNotThrow(() => JSON.parse(raw));
+    assert.equal(raw.endsWith("\n"), true);
+  });
+});
+
 describe("extractTarGz()", () => {
   let tmpDir;
 
@@ -92,20 +189,14 @@ describe("extractTarGz()", () => {
   it("extracts and strips the top-level directory", async () => {
     const srcDir = path.join(tmpDir, "src");
     fs.mkdirSync(path.join(srcDir, "pkg-1.0.0", "bin"), { recursive: true });
-    fs.writeFileSync(
-      path.join(srcDir, "pkg-1.0.0", "README.md"),
-      "hello tar",
-    );
+    fs.writeFileSync(path.join(srcDir, "pkg-1.0.0", "README.md"), "hello tar");
     fs.writeFileSync(
       path.join(srcDir, "pkg-1.0.0", "bin", "cli.js"),
       "console.log(1)",
     );
 
     const archivePath = path.join(tmpDir, "pkg.tar.gz");
-    await tar.c(
-      { cwd: srcDir, file: archivePath, gzip: true },
-      ["pkg-1.0.0"],
-    );
+    await tar.c({ cwd: srcDir, file: archivePath, gzip: true }, ["pkg-1.0.0"]);
 
     const destDir = path.join(tmpDir, "dest-stripped");
     await extractTarGz(archivePath, destDir, { strip: 1 });
@@ -249,6 +340,68 @@ describe("request()", () => {
     try {
       const dest = path.join(tmpDir, "missing.txt");
       await assert.rejects(request(server.url, dest), /Status code: 404/);
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+describe("fetchJson()", () => {
+  it("parses a 200 response body as JSON", async () => {
+    const server = await startServer((req, res) => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ hello: "world" }));
+    });
+
+    try {
+      assert.deepEqual(await fetchJson(server.url), { hello: "world" });
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("follows redirects", async () => {
+    const server = await startServer((req, res) => {
+      if (req.url === "/first") {
+        res.writeHead(302, { Location: "/second" });
+        res.end();
+        return;
+      }
+
+      res.writeHead(200);
+      res.end(JSON.stringify({ redirected: true }));
+    });
+
+    try {
+      assert.deepEqual(await fetchJson(`${server.url}/first`), {
+        redirected: true,
+      });
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("rejects on a non-200 status code", async () => {
+    const server = await startServer((req, res) => {
+      res.writeHead(500);
+      res.end("boom");
+    });
+
+    try {
+      await assert.rejects(fetchJson(server.url), /Status code: 500/);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("rejects when the body is not valid JSON", async () => {
+    const server = await startServer((req, res) => {
+      res.writeHead(200);
+      res.end("not json");
+    });
+
+    try {
+      await assert.rejects(fetchJson(server.url), SyntaxError);
     } finally {
       await server.close();
     }

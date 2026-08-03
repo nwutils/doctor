@@ -6,6 +6,9 @@ import globals from "globals";
 
 export default defineConfig([
   {
+    ignores: [".doctor-cache/**"],
+  },
+  {
     files: ["**/*.{js,mjs,cjs}"],
     plugins: {
       jsdoc,

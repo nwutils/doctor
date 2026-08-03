@@ -61,11 +61,7 @@ describe("downloadPackageManager()", () => {
     fs.mkdirSync(path.join(cacheDir, "npm", "v10.9.0"), { recursive: true });
 
     const { downloadPackageManager } = await importPackageManager();
-    const installDir = await downloadPackageManager(
-      cacheDir,
-      "npm",
-      "10.9.0",
-    );
+    const installDir = await downloadPackageManager(cacheDir, "npm", "10.9.0");
 
     assert.equal(installDir, path.join(cacheDir, "npm", "v10.9.0"));
     assert.equal(request.mock.callCount(), 0);
@@ -84,11 +80,7 @@ describe("downloadPackageManager()", () => {
       t.after(() => fs.rmSync(cacheDir, { force: true, recursive: true }));
 
       const { downloadPackageManager } = await importPackageManager();
-      const installDir = await downloadPackageManager(
-        cacheDir,
-        name,
-        "1.2.3",
-      );
+      const installDir = await downloadPackageManager(cacheDir, name, "1.2.3");
 
       assert.equal(installDir, path.join(cacheDir, name, "v1.2.3"));
       assert.equal(request.mock.callCount(), 1);
@@ -98,7 +90,8 @@ describe("downloadPackageManager()", () => {
         `https://registry.npmjs.org/${name}/-/${name}-1.2.3.tgz`,
       );
       assert.equal(extractTarGz.mock.callCount(), 1);
-      const [, extractDest, extractOptions] = extractTarGz.mock.calls[0].arguments;
+      const [, extractDest, extractOptions] =
+        extractTarGz.mock.calls[0].arguments;
       assert.equal(extractDest, installDir);
       assert.deepEqual(extractOptions, { strip: 1 });
     });

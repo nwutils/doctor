@@ -1,9 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { downloadNode, identifyNodeVersionManager } from "./node.js";
+import {
+  downloadNode,
+  identifyNodeVersionManager,
+  linkNodeBin,
+} from "./node.js";
+import { getNodeVersionForNwjs } from "./nw.js";
 import { downloadPackageManager } from "./packageManager.js";
-import { getDevEngines, toArray } from "./utils.js";
+import { getDevEngines, setDevEnginesRuntime, toArray } from "./utils.js";
+
+const DEFAULT_MANIFEST_URL = "https://nwjs.io/versions.json";
 
 /**
  * @typedef {object} Options
@@ -77,6 +84,7 @@ async function installDevEngines(options) {
         cache,
       );
       await downloadNode(cacheDir, runtime.version);
+      linkNodeBin(srcDir, cacheDir, runtime.version);
     } catch (err) {
       handleFail(onFail, err);
     }
@@ -106,6 +114,47 @@ async function installDevEngines(options) {
 }
 
 /**
+ * Preserve an existing single-entry `devEngines.runtime`'s `onFail` policy,
+ * defaulting to "warn" when there was none (or it was an array of entries).
+ * @param   {import("./utils.js").DevEngine | import("./utils.js").DevEngine[] | undefined} existingRuntime
+ * @returns {"error" | "warn" | "ignore"}
+ */
+function resolveRuntimeOnFail(existingRuntime) {
+  return !Array.isArray(existingRuntime) && existingRuntime?.onFail
+    ? existingRuntime.onFail
+    : "warn";
+}
+
+/**
+ * Downloads and installs the Node.js version bundled with the requested
+ * NW.js `version`, as resolved from the versions manifest, then updates
+ * `devEngines.runtime` in the application's package.json to match.
+ * @param  {Options} options
+ * @returns {Promise<void>}
+ */
+async function installNwjsNodeRuntime(options) {
+  const { cache, cacheDir, manifestUrl, srcDir, version } = options;
+  const nodeVersion = await getNodeVersionForNwjs(
+    manifestUrl ?? DEFAULT_MANIFEST_URL,
+    version,
+  );
+
+  await evictStaleCache(
+    path.resolve(cacheDir, "node", `v${nodeVersion}`),
+    cache,
+  );
+  await downloadNode(cacheDir, nodeVersion);
+  linkNodeBin(srcDir, cacheDir, nodeVersion);
+
+  const { runtime: existingRuntime } = getDevEngines(srcDir);
+  setDevEnginesRuntime(srcDir, {
+    name: "node",
+    onFail: resolveRuntimeOnFail(existingRuntime),
+    version: nodeVersion,
+  });
+}
+
+/**
  * Get NW.js and related binaries for Linux, MacOS and Windows.
  * @async
  * @function
@@ -118,6 +167,10 @@ async function doctor(options) {
   }
 
   await installDevEngines(options);
+
+  if (options.version !== undefined) {
+    await installNwjsNodeRuntime(options);
+  }
 }
 
 export default doctor;

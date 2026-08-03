@@ -99,6 +99,62 @@ export function request(url, filePath) {
 }
 
 /**
+ * Fetch `url` and parse its response body as JSON.
+ * @param {string} url
+ * @returns {Promise<unknown>}
+ */
+export function fetchJson(url) {
+  const parsedUrl = new URL(url);
+  const client = parsedUrl.protocol === "https:" ? https : http;
+
+  return new Promise((resolve, reject) => {
+    const req = client.get(
+      {
+        headers: { "User-Agent": "node:http(s)" },
+        hostname: parsedUrl.hostname,
+        path: parsedUrl.pathname + parsedUrl.search,
+        port: parsedUrl.port || (parsedUrl.protocol === "https:" ? 443 : 80),
+      },
+      (res) => {
+        if (
+          res.statusCode &&
+          res.statusCode >= 300 &&
+          res.statusCode < 400 &&
+          res.headers.location
+        ) {
+          const redirectedUrl = new URL(
+            res.headers.location,
+            parsedUrl,
+          ).toString();
+          return resolve(fetchJson(redirectedUrl));
+        }
+
+        if (res.statusCode !== 200) {
+          res.resume();
+          return reject(
+            new Error(`Request failed. Status code: ${res.statusCode}`),
+          );
+        }
+
+        /** @type {Buffer[]} */
+        const chunks = [];
+        res.on("data", (chunk) => chunks.push(chunk));
+        res.on("end", () => {
+          try {
+            resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+          } catch (err) {
+            reject(err);
+          }
+        });
+        res.on("error", reject);
+      },
+    );
+
+    req.on("error", reject);
+  });
+}
+
+/**
  * Extract a `.tar.gz` archive into `destDir`.
  * @param {string} archivePath
  * @param {string} destDir
@@ -175,6 +231,29 @@ export function getDevEngines(srcDir) {
   const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
 
   return packageJson.devEngines ?? {};
+}
+
+/**
+ * Overwrite `devEngines.runtime` in a project's `package.json` with a single
+ * runtime entry, leaving every other field (including `devEngines.packageManager`)
+ * untouched.
+ * @param   {string}    srcDir  Directory containing the project's `package.json`
+ * @param   {DevEngine} runtime
+ * @returns {void}
+ */
+export function setDevEnginesRuntime(srcDir, runtime) {
+  const packageJsonPath = path.resolve(srcDir, "package.json");
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+
+  packageJson.devEngines = {
+    ...packageJson.devEngines,
+    runtime,
+  };
+
+  fs.writeFileSync(
+    packageJsonPath,
+    `${JSON.stringify(packageJson, null, 2)}\n`,
+  );
 }
 
 /**

@@ -6,6 +6,7 @@ import { describe, it } from "node:test";
 
 const utilsUrl = new URL("../../src/utils.js", import.meta.url);
 const childProcessUrl = new URL("node:child_process", import.meta.url);
+const fsUrl = new URL("node:fs", import.meta.url);
 
 let caseId = 0;
 /** Import node.js fresh, so each test can register its own module mocks. */
@@ -122,7 +123,8 @@ describe("downloadNode()", () => {
     );
     assert.equal(extractTarGz.mock.callCount(), 1);
     assert.equal(extractZip.mock.callCount(), 0);
-    const [, extractDest, extractOptions] = extractTarGz.mock.calls[0].arguments;
+    const [, extractDest, extractOptions] =
+      extractTarGz.mock.calls[0].arguments;
     assert.equal(extractDest, installDir);
     assert.deepEqual(extractOptions, { strip: 1 });
   });
@@ -222,5 +224,108 @@ describe("downloadNode()", () => {
     await assert.rejects(downloadNode(cacheDir, "20.11.1"), /bad archive/);
 
     assert.equal(fs.existsSync(archivePaths[0]), false);
+  });
+});
+
+describe("linkNodeBin()", () => {
+  it("symlinks node_modules/.bin/node to the cached binary on linux/darwin", async (t) => {
+    withProcessProperty(t, "platform", "linux");
+
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "doctor-link-"));
+    t.after(() => fs.rmSync(root, { force: true, recursive: true }));
+
+    const srcDir = path.join(root, "project");
+    const cacheDir = path.join(root, "cache");
+    fs.mkdirSync(srcDir, { recursive: true });
+    const target = path.join(cacheDir, "node", "v20.11.1", "bin", "node");
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, "#!/bin/sh\necho fake node");
+
+    const { linkNodeBin } = await importNode();
+    linkNodeBin(srcDir, cacheDir, "20.11.1");
+
+    const linkPath = path.join(srcDir, "node_modules", ".bin", "node");
+    assert.equal(fs.lstatSync(linkPath).isSymbolicLink(), true);
+    assert.equal(fs.realpathSync(linkPath), fs.realpathSync(target));
+  });
+
+  it("links to node.exe under node_modules/.bin on win32", async (t) => {
+    withProcessProperty(t, "platform", "win32");
+
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "doctor-link-"));
+    t.after(() => fs.rmSync(root, { force: true, recursive: true }));
+
+    const srcDir = path.join(root, "project");
+    const cacheDir = path.join(root, "cache");
+    fs.mkdirSync(srcDir, { recursive: true });
+    const target = path.join(cacheDir, "node", "v20.11.1", "node.exe");
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, "fake node.exe");
+
+    const { linkNodeBin } = await importNode();
+    linkNodeBin(srcDir, cacheDir, "20.11.1");
+
+    const linkPath = path.join(srcDir, "node_modules", ".bin", "node.exe");
+    assert.equal(fs.existsSync(linkPath), true);
+  });
+
+  it("replaces a stale link when re-run for a different version", async (t) => {
+    withProcessProperty(t, "platform", "linux");
+
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "doctor-link-"));
+    t.after(() => fs.rmSync(root, { force: true, recursive: true }));
+
+    const srcDir = path.join(root, "project");
+    const cacheDir = path.join(root, "cache");
+    fs.mkdirSync(srcDir, { recursive: true });
+    for (const version of ["18.0.0", "20.11.1"]) {
+      const target = path.join(cacheDir, "node", `v${version}`, "bin", "node");
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, `fake node ${version}`);
+    }
+
+    const { linkNodeBin } = await importNode();
+    linkNodeBin(srcDir, cacheDir, "18.0.0");
+    linkNodeBin(srcDir, cacheDir, "20.11.1");
+
+    const linkPath = path.join(srcDir, "node_modules", ".bin", "node");
+    assert.match(fs.realpathSync(linkPath), /v20\.11\.1/);
+  });
+
+  it("falls back to copying the binary when symlinking is not permitted", async (t) => {
+    withProcessProperty(t, "platform", "linux");
+
+    const realFs = await import("node:fs");
+    const copyFileSync = t.mock.fn(realFs.copyFileSync);
+    t.mock.module(fsUrl, {
+      defaultExport: {
+        ...realFs,
+        copyFileSync,
+        symlinkSync: () => {
+          throw new Error("EPERM: operation not permitted, symlink");
+        },
+      },
+    });
+
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "doctor-link-"));
+    t.after(() => fs.rmSync(root, { force: true, recursive: true }));
+
+    const srcDir = path.join(root, "project");
+    const cacheDir = path.join(root, "cache");
+    fs.mkdirSync(srcDir, { recursive: true });
+    const target = path.join(cacheDir, "node", "v20.11.1", "bin", "node");
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, "fake node binary contents");
+
+    const { linkNodeBin } = await importNode();
+    linkNodeBin(srcDir, cacheDir, "20.11.1");
+
+    const linkPath = path.join(srcDir, "node_modules", ".bin", "node");
+    assert.equal(copyFileSync.mock.callCount(), 1);
+    assert.equal(fs.lstatSync(linkPath).isSymbolicLink(), false);
+    assert.equal(
+      fs.readFileSync(linkPath, "utf8"),
+      "fake node binary contents",
+    );
   });
 });

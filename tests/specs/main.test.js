@@ -4,7 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 
+import { getDevEngines } from "../../src/utils.js";
+
 const nodeModuleUrl = new URL("../../src/node.js", import.meta.url);
+const nwModuleUrl = new URL("../../src/nw.js", import.meta.url);
 const packageManagerModuleUrl = new URL(
   "../../src/packageManager.js",
   import.meta.url,
@@ -38,17 +41,34 @@ function makeFixture(t, devEngines) {
   return { cacheDir, srcDir };
 }
 
-function mockEngines(t, { identifyNodeVersionManager, downloadNode, downloadPackageManager }) {
+function mockEngines(
+  t,
+  {
+    identifyNodeVersionManager,
+    downloadNode,
+    linkNodeBin,
+    downloadPackageManager,
+    getNodeVersionForNwjs,
+  },
+) {
   t.mock.module(nodeModuleUrl, {
     namedExports: {
       downloadNode: downloadNode ?? t.mock.fn(async () => {}),
       identifyNodeVersionManager:
         identifyNodeVersionManager ?? t.mock.fn(() => "none"),
+      linkNodeBin: linkNodeBin ?? t.mock.fn(() => {}),
     },
   });
   t.mock.module(packageManagerModuleUrl, {
     namedExports: {
-      downloadPackageManager: downloadPackageManager ?? t.mock.fn(async () => {}),
+      downloadPackageManager:
+        downloadPackageManager ?? t.mock.fn(async () => {}),
+    },
+  });
+  t.mock.module(nwModuleUrl, {
+    namedExports: {
+      getNodeVersionForNwjs:
+        getNodeVersionForNwjs ?? t.mock.fn(async () => "0.0.0"),
     },
   });
 }
@@ -106,6 +126,43 @@ describe("doctor()", () => {
     ]);
   });
 
+  it("links the cached binary into node_modules/.bin after a devEngines.runtime install", async (t) => {
+    const linkNodeBin = t.mock.fn(() => {});
+    mockEngines(t, { linkNodeBin });
+
+    const { srcDir, cacheDir } = makeFixture(t, {
+      runtime: { name: "node", version: "20.11.1" },
+    });
+
+    const doctor = (await importDoctor()).default;
+    await doctor({ cacheDir, srcDir });
+
+    assert.deepEqual(linkNodeBin.mock.calls[0].arguments, [
+      srcDir,
+      cacheDir,
+      "20.11.1",
+    ]);
+  });
+
+  it("does not link when the devEngines.runtime download fails", async (t) => {
+    const warn = t.mock.method(console, "warn", () => {});
+    const linkNodeBin = t.mock.fn(() => {});
+    const downloadNode = t.mock.fn(async () => {
+      throw new Error("network unreachable");
+    });
+    mockEngines(t, { downloadNode, linkNodeBin });
+
+    const { srcDir, cacheDir } = makeFixture(t, {
+      runtime: { name: "node", version: "20.11.1" },
+    });
+
+    const doctor = (await importDoctor()).default;
+    await doctor({ cacheDir, srcDir });
+
+    assert.equal(linkNodeBin.mock.callCount(), 0);
+    assert.equal(warn.mock.callCount(), 1);
+  });
+
   it("installs every runtime entry in an array, in order", async (t) => {
     const calls = [];
     const downloadNode = t.mock.fn(async (cacheDir, version) => {
@@ -128,9 +185,11 @@ describe("doctor()", () => {
 
   it("installs every packageManager entry, single object and array alike", async (t) => {
     const calls = [];
-    const downloadPackageManager = t.mock.fn(async (cacheDir, name, version) => {
-      calls.push(`${name}@${version}`);
-    });
+    const downloadPackageManager = t.mock.fn(
+      async (cacheDir, name, version) => {
+        calls.push(`${name}@${version}`);
+      },
+    );
     mockEngines(t, { downloadPackageManager });
 
     const { srcDir, cacheDir } = makeFixture(t, {
@@ -163,7 +222,10 @@ describe("doctor()", () => {
     assert.equal(downloadNode.mock.callCount(), 0);
     assert.equal(downloadPackageManager.mock.callCount(), 1);
     assert.equal(warn.mock.callCount(), 1);
-    assert.match(warn.mock.calls[0].arguments[0], /Unsupported devEngines\.runtime "deno"/);
+    assert.match(
+      warn.mock.calls[0].arguments[0],
+      /Unsupported devEngines\.runtime "deno"/,
+    );
   });
 
   it("throws and stops on onFail: 'error'", async (t) => {
@@ -258,5 +320,185 @@ describe("doctor()", () => {
     await doctor({ cacheDir, srcDir });
 
     assert.equal(existedWhenDownloadCalled, true);
+  });
+
+  it("does not resolve an NW.js version when options.version is absent", async (t) => {
+    const getNodeVersionForNwjs = t.mock.fn(async () => "26.1.0");
+    const downloadNode = t.mock.fn(async () => {});
+    mockEngines(t, { downloadNode, getNodeVersionForNwjs });
+
+    const { srcDir, cacheDir } = makeFixture(t, undefined);
+
+    const doctor = (await importDoctor()).default;
+    await doctor({ cacheDir, srcDir });
+
+    assert.equal(getNodeVersionForNwjs.mock.callCount(), 0);
+    assert.equal(downloadNode.mock.callCount(), 0);
+  });
+
+  it("downloads the Node.js version bundled with the requested NW.js version", async (t) => {
+    const getNodeVersionForNwjs = t.mock.fn(async () => "26.1.0");
+    const downloadNode = t.mock.fn(async () => {});
+    mockEngines(t, { downloadNode, getNodeVersionForNwjs });
+
+    const { srcDir, cacheDir } = makeFixture(t, undefined);
+
+    const doctor = (await importDoctor()).default;
+    await doctor({ cacheDir, srcDir, version: "0.113.0" });
+
+    assert.deepEqual(getNodeVersionForNwjs.mock.calls[0].arguments, [
+      "https://nwjs.io/versions.json",
+      "0.113.0",
+    ]);
+    assert.deepEqual(downloadNode.mock.calls[0].arguments, [
+      cacheDir,
+      "26.1.0",
+    ]);
+    assert.deepEqual(getDevEngines(srcDir).runtime, {
+      name: "node",
+      onFail: "warn",
+      version: "26.1.0",
+    });
+  });
+
+  it("links the cached binary into node_modules/.bin for the NW.js-resolved Node.js version", async (t) => {
+    const getNodeVersionForNwjs = t.mock.fn(async () => "26.1.0");
+    const linkNodeBin = t.mock.fn(() => {});
+    mockEngines(t, { getNodeVersionForNwjs, linkNodeBin });
+
+    const { srcDir, cacheDir } = makeFixture(t, undefined);
+
+    const doctor = (await importDoctor()).default;
+    await doctor({ cacheDir, srcDir, version: "0.113.0" });
+
+    assert.deepEqual(linkNodeBin.mock.calls[0].arguments, [
+      srcDir,
+      cacheDir,
+      "26.1.0",
+    ]);
+  });
+
+  it("overwrites an unrelated existing devEngines.runtime to match the resolved NW.js version", async (t) => {
+    const getNodeVersionForNwjs = t.mock.fn(async () => "26.1.0");
+    mockEngines(t, { getNodeVersionForNwjs });
+
+    const { srcDir, cacheDir } = makeFixture(t, {
+      runtime: { name: "deno", version: "1.0.0" },
+    });
+
+    const doctor = (await importDoctor()).default;
+    await doctor({ cacheDir, srcDir, version: "0.113.0" });
+
+    assert.deepEqual(getDevEngines(srcDir).runtime, {
+      name: "node",
+      onFail: "warn",
+      version: "26.1.0",
+    });
+  });
+
+  it("preserves an existing runtime's onFail policy when overwriting", async (t) => {
+    const getNodeVersionForNwjs = t.mock.fn(async () => "26.1.0");
+    mockEngines(t, { getNodeVersionForNwjs });
+
+    const { srcDir, cacheDir } = makeFixture(t, {
+      runtime: { name: "node", onFail: "error", version: "20.0.0" },
+    });
+
+    const doctor = (await importDoctor()).default;
+    await doctor({ cacheDir, srcDir, version: "0.113.0" });
+
+    assert.deepEqual(getDevEngines(srcDir).runtime, {
+      name: "node",
+      onFail: "error",
+      version: "26.1.0",
+    });
+  });
+
+  it("does not write devEngines.runtime when options.version is absent", async (t) => {
+    mockEngines(t, {});
+
+    const { srcDir, cacheDir } = makeFixture(t, {
+      runtime: { name: "node", version: "20.0.0" },
+    });
+
+    const doctor = (await importDoctor()).default;
+    await doctor({ cacheDir, srcDir });
+
+    assert.deepEqual(getDevEngines(srcDir).runtime, {
+      name: "node",
+      version: "20.0.0",
+    });
+  });
+
+  it("does not write devEngines.runtime when the NW.js version cannot be resolved", async (t) => {
+    const getNodeVersionForNwjs = t.mock.fn(async () => {
+      throw new Error("NW.js version not found");
+    });
+    mockEngines(t, { getNodeVersionForNwjs });
+
+    const { srcDir, cacheDir } = makeFixture(t, {
+      runtime: { name: "node", version: "20.0.0" },
+    });
+
+    const doctor = (await importDoctor()).default;
+    await assert.rejects(doctor({ cacheDir, srcDir, version: "9.9.9" }));
+
+    assert.deepEqual(getDevEngines(srcDir).runtime, {
+      name: "node",
+      version: "20.0.0",
+    });
+  });
+
+  it("uses a custom manifestUrl when provided", async (t) => {
+    const getNodeVersionForNwjs = t.mock.fn(async () => "26.1.0");
+    mockEngines(t, { getNodeVersionForNwjs });
+
+    const { srcDir, cacheDir } = makeFixture(t, undefined);
+
+    const doctor = (await importDoctor()).default;
+    await doctor({
+      cacheDir,
+      manifestUrl: "https://example.test/versions.json",
+      srcDir,
+      version: "latest",
+    });
+
+    assert.deepEqual(getNodeVersionForNwjs.mock.calls[0].arguments, [
+      "https://example.test/versions.json",
+      "latest",
+    ]);
+  });
+
+  it("runs both devEngines installs and the NW.js Node.js download", async (t) => {
+    const calls = [];
+    const downloadNode = t.mock.fn(async (cacheDir, version) => {
+      calls.push(version);
+    });
+    const getNodeVersionForNwjs = t.mock.fn(async () => "26.1.0");
+    mockEngines(t, { downloadNode, getNodeVersionForNwjs });
+
+    const { srcDir, cacheDir } = makeFixture(t, {
+      runtime: { name: "node", version: "20.0.0" },
+    });
+
+    const doctor = (await importDoctor()).default;
+    await doctor({ cacheDir, srcDir, version: "0.113.0" });
+
+    assert.deepEqual(calls, ["20.0.0", "26.1.0"]);
+  });
+
+  it("rejects when the NW.js version cannot be resolved", async (t) => {
+    const getNodeVersionForNwjs = t.mock.fn(async () => {
+      throw new Error("NW.js version not found");
+    });
+    mockEngines(t, { getNodeVersionForNwjs });
+
+    const { srcDir, cacheDir } = makeFixture(t, undefined);
+
+    const doctor = (await importDoctor()).default;
+    await assert.rejects(
+      doctor({ cacheDir, srcDir, version: "9.9.9" }),
+      /NW\.js version not found/,
+    );
   });
 });

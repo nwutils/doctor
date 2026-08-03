@@ -92,6 +92,37 @@ export async function downloadNode(cacheDir, version) {
 }
 
 /**
+ * Link the cached Node.js binary into `<srcDir>/node_modules/.bin`, so it
+ * can be invoked as `node` from npm scripts and `npx` within this project
+ * only, without touching the system-wide `node`.
+ *
+ * Symlinks where possible; falls back to copying the binary (e.g. on
+ * Windows without Developer Mode/admin rights, where creating a symlink
+ * requires elevated privileges).
+ * @param   {string} srcDir   Directory containing the application's package.json
+ * @param   {string} cacheDir Cache directory
+ * @param   {string} version  Node.js version, e.g. "20.11.0"
+ * @returns {void}
+ */
+export function linkNodeBin(srcDir, cacheDir, version) {
+  const target = resolveNodeBinPath(cacheDir, version);
+  const binDir = path.resolve(srcDir, "node_modules", ".bin");
+  const linkPath = path.resolve(
+    binDir,
+    process.platform === "win32" ? "node.exe" : "node",
+  );
+
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.rmSync(linkPath, { force: true });
+
+  try {
+    fs.symlinkSync(target, linkPath);
+  } catch {
+    fs.copyFileSync(target, linkPath);
+  }
+}
+
+/**
  * Identifies the Node.js version manager in use.
  *
  * @returns {"none"}

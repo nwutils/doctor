@@ -18,7 +18,7 @@ function crc32(buf) {
     }
   }
 
-  return (~crc) >>> 0;
+  return ~crc >>> 0;
 }
 
 /**
