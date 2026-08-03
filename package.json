@@ -43,7 +43,7 @@
     "format:fix": "prettier --write .",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "postinstall": "node examples/check-dev-engines.js",
+    "postinstall": "node examples/check-dev-engines.js . .doctor-cache latest",
     "type": "tsc",
     "test": "node --test --experimental-test-module-mocks --experimental-test-coverage --test-coverage-exclude=\"tests/**/*\" \"tests/specs/*.test.js\""
   },
@@ -67,8 +67,8 @@
   "devEngines": {
     "runtime": {
       "name": "node",
-      "version": "26.1.0",
-      "onFail": "warn"
+      "onFail": "warn",
+      "version": "26.1.0"
     },
     "packageManager": {
       "name": "npm",
