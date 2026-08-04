@@ -2,8 +2,6 @@
 node_modules
 
 # package
+cache
 coverage
 types
-
-# doctor cache (examples/check-dev-engines.js default cacheDir)
-.doctor-cache

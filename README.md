@@ -2,7 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/@nwutils/doctor/latest)](https://www.npmjs.com/package/@nwutils/doctor/v/latest)
 
-Download NW.js and related binaries for Linux, MacOS and Windows.
+Detect and configure Linux, MacOS and Windows platforms for NW.js development.
 
 ## Getting Started
 
@@ -51,7 +51,5 @@ Options
 
 ## Roadmap
 
-- [ ] Check if NW.js is downloaded.
-- [ ] Check if Node.js is installed.
-- [ ] Check if community ffmpeg is installed.
-- [ ] Check if headers are installed.
+- [ ] detect() - only checks the environment
+- [ ] configure() - changes the environment
