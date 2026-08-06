@@ -30,6 +30,7 @@ async function doctor(options) {
     options.version = manifest[options.version].slice(1);
   }
   let releaseData = manifest.versions.find(
+    /** @param {{ version: string, components: { node: string } }} release */
     (release) => release.version === `v${options.version}`,
   );
 
@@ -46,7 +47,7 @@ async function doctor(options) {
         ". Native addons may not build properly.",
     );
     console.log(
-      "[ WARN ] Install the required Node.js version via a Node verssion manager (e.g., nvm, n, volta) or download it from https://nodejs.org/en/download/releases/.",
+      "[ INFO ] Install the required Node.js version via a Node verssion manager (e.g., nvm, n, volta) or download it from https://nodejs.org/en/download/releases/.",
     );
   } else {
     console.log("[ INFO ] Your current Node.js version is compatible.");
