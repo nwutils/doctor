@@ -14,6 +14,9 @@ import util from "./util.js";
  * @returns {Promise<void>}
  */
 async function doctor(options) {
+  /* Node version manager */
+  // TODO: Implement detection of Node version managers (nvm, n, volta) and check if the required Node.js version is installed. If not, provide instructions to install it.
+  const nodeVersionManager = "none";
   /* Get the NW.js versions manifest */
   const manifestPath = path.resolve(options.cacheDir, "versions.json");
   fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
@@ -38,13 +41,19 @@ async function doctor(options) {
   console.log(
     "[ INFO ] The required Node.js version is: " + nodeRequiredVersion,
   );
+  
+  await util.request("https://registry.npmjs.org/-/package/npm/dist-tags", path.resolve(options.cacheDir, "npm-dist-tags.json"));
+  const npmLatestVersion = JSON.parse(fs.readFileSync(path.resolve(options.cacheDir, "npm-dist-tags.json"), "utf8"))["latest"];
+  console.log(
+    "[ INFO ] The latest npm version is: " + npmLatestVersion,
+  );
 
   const nodeCurrentVersion = process.versions["node"];
   if (nodeCurrentVersion !== nodeRequiredVersion) {
     console.log(
       "[ WARN ] Your current Node.js version is: " +
-        nodeCurrentVersion +
-        ". Native addons may not build properly.",
+      nodeCurrentVersion +
+      ". Native addons may not build properly.",
     );
     console.log(
       "[ INFO ] Install the required Node.js version via a Node verssion manager (e.g., nvm, n, volta) or download it from https://nodejs.org/en/download/releases/.",
@@ -52,11 +61,24 @@ async function doctor(options) {
   } else {
     console.log("[ INFO ] Your current Node.js version is compatible.");
   }
+
+  const nodeManifestPath = path.resolve(options.srcDir, "package.json");
+  if (fs.existsSync(nodeManifestPath) && nodeVersionManager === "none") {
+    const nodeManifest = JSON.parse(fs.readFileSync(nodeManifestPath, "utf8"));
+    nodeManifest.devEngines = {
+      "runtime": {
+        "name": "node",
+        "onFail": "warn",
+        "version": nodeRequiredVersion
+      },
+      "packageManager": {
+        "name": "npm",
+        "version": npmLatestVersion,
+        "onFail": "warn"
+      }
+    }
+    fs.writeFileSync(nodeManifestPath, JSON.stringify(nodeManifest, null, 2));
+  }
 }
 
-await doctor({
-  manifestUrl: "https://nwjs.io/versions.json",
-  cacheDir: "cache",
-  version: "latest",
-  srcDir: ".",
-});
+export default doctor;
