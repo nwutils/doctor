@@ -47,8 +47,8 @@ async function doctor(options) {
   if (nodeCurrentVersion !== nodeRequiredVersion) {
     console.log(
       "[ WARN ] Your current Node.js version is: " +
-      nodeCurrentVersion +
-      ". Native addons may not build properly.",
+        nodeCurrentVersion +
+        ". Native addons may not build properly.",
     );
     console.log(
       "[ INFO ] Install the required Node.js version via a Node verssion manager (e.g., nvm, n, volta) or download it from https://nodejs.org/en/download/releases/.",
@@ -57,29 +57,37 @@ async function doctor(options) {
     console.log("[ INFO ] Your current Node.js version is compatible.");
   }
 
-  await util.request("https://registry.npmjs.org/-/package/npm/dist-tags", path.resolve(options.cacheDir, "npm-dist-tags.json"));
-  const npmLatestVersion = JSON.parse(fs.readFileSync(path.resolve(options.cacheDir, "npm-dist-tags.json"), "utf8"))["latest"];
-  console.log(
-    "[ INFO ] The latest npm version is: " + npmLatestVersion,
+  await util.request(
+    "https://registry.npmjs.org/-/package/npm/dist-tags",
+    path.resolve(options.cacheDir, "npm-dist-tags.json"),
   );
-  const npmCurrentVersion = child_process.execSync("npm --version", { encoding: "utf8" }).trim();
+  const npmLatestVersion = JSON.parse(
+    fs.readFileSync(
+      path.resolve(options.cacheDir, "npm-dist-tags.json"),
+      "utf8",
+    ),
+  )["latest"];
+  console.log("[ INFO ] The latest npm version is: " + npmLatestVersion);
+  const npmCurrentVersion = child_process
+    .execSync("npm --version", { encoding: "utf8" })
+    .trim();
   console.log("[ WARN ] The current npm version is: " + npmCurrentVersion);
 
   const nodeManifestPath = path.resolve(options.srcDir, "package.json");
   if (fs.existsSync(nodeManifestPath) && nodeVersionManager === "none") {
     const nodeManifest = JSON.parse(fs.readFileSync(nodeManifestPath, "utf8"));
     nodeManifest.devEngines = {
-      "runtime": {
-        "name": "node",
-        "onFail": "warn",
-        "version": nodeRequiredVersion
+      runtime: {
+        name: "node",
+        onFail: "warn",
+        version: nodeRequiredVersion,
       },
-      "packageManager": {
-        "name": "npm",
-        "version": npmLatestVersion,
-        "onFail": "warn"
-      }
-    }
+      packageManager: {
+        name: "npm",
+        version: npmLatestVersion,
+        onFail: "warn",
+      },
+    };
     fs.writeFileSync(nodeManifestPath, JSON.stringify(nodeManifest, null, 2));
   }
 }

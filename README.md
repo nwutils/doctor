@@ -37,12 +37,12 @@ The shell output
 
 Options
 
-| Name        | Type                                                                                                                                                          | Description                                                                              |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| version     | `string \| "latest" \| "stable"`                                                                                                                              | 
-| manifestUrl | `"https://nwjs.io/versions.json" \| "https://raw.githubusercontent.com/nwutils/nw-builder/main/src/util/osx.arm.versions.json"`                               | Versions manifest                                                                        |
-| srcDir      | `string`                                                                                                                                                      | Directory containing the application's `package.json` (used to read `devEngines`)        |
-| cacheDir    | `string`                                                                                                                                                      | Directory to cache NW binaries                                                           |
+| Name        | Type                                                                                                                            | Description                                                                       |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| version     | `string \| "latest" \| "stable"`                                                                                                |
+| manifestUrl | `"https://nwjs.io/versions.json" \| "https://raw.githubusercontent.com/nwutils/nw-builder/main/src/util/osx.arm.versions.json"` | Versions manifest                                                                 |
+| srcDir      | `string`                                                                                                                        | Directory containing the application's `package.json` (used to read `devEngines`) |
+| cacheDir    | `string`                                                                                                                        | Directory to cache NW binaries                                                    |
 
 ## Contributing
 

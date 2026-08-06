@@ -5,9 +5,7 @@ import { after, before, describe, it } from "node:test";
 import doctor from "../../src/main.js";
 
 describe("doctor test suite", function () {
-
   before(async function () {
-
     let options = {
       manifestUrl: "https://nwjs.io/versions.json",
       cacheDir: "cache",
@@ -16,7 +14,6 @@ describe("doctor test suite", function () {
     };
 
     await doctor(options);
-
   });
 
   it("creates the cache directory", async () => {
@@ -41,6 +38,5 @@ describe("doctor test suite", function () {
 
   after(function () {
     fs.rmSync("cache", { recursive: true });
-  })
-
+  });
 });
