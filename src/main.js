@@ -1,3 +1,4 @@
+import child_process from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -41,12 +42,6 @@ async function doctor(options) {
   console.log(
     "[ INFO ] The required Node.js version is: " + nodeRequiredVersion,
   );
-  
-  await util.request("https://registry.npmjs.org/-/package/npm/dist-tags", path.resolve(options.cacheDir, "npm-dist-tags.json"));
-  const npmLatestVersion = JSON.parse(fs.readFileSync(path.resolve(options.cacheDir, "npm-dist-tags.json"), "utf8"))["latest"];
-  console.log(
-    "[ INFO ] The latest npm version is: " + npmLatestVersion,
-  );
 
   const nodeCurrentVersion = process.versions["node"];
   if (nodeCurrentVersion !== nodeRequiredVersion) {
@@ -61,6 +56,14 @@ async function doctor(options) {
   } else {
     console.log("[ INFO ] Your current Node.js version is compatible.");
   }
+
+  await util.request("https://registry.npmjs.org/-/package/npm/dist-tags", path.resolve(options.cacheDir, "npm-dist-tags.json"));
+  const npmLatestVersion = JSON.parse(fs.readFileSync(path.resolve(options.cacheDir, "npm-dist-tags.json"), "utf8"))["latest"];
+  console.log(
+    "[ INFO ] The latest npm version is: " + npmLatestVersion,
+  );
+  const npmCurrentVersion = child_process.execSync("npm --version", { encoding: "utf8" }).trim();
+  console.log("[ WARN ] The current npm version is: " + npmCurrentVersion);
 
   const nodeManifestPath = path.resolve(options.srcDir, "package.json");
   if (fs.existsSync(nodeManifestPath) && nodeVersionManager === "none") {

@@ -10,12 +10,27 @@ Detect and configure Linux, MacOS and Windows platforms for NW.js development.
 
 ## Usage
 
+Calling the API
+
 ```js
 import doctor from "@nwutils/doctor";
 
 await doctor({
-  // ...
+  version: "latest",
+  manifestUrl: "https://nwjs.io/versions.json",
+  cacheDir: "cache",
+  srcDir: "./path/to/app",
 });
+```
+
+The shell output
+
+```shell
+[ INFO ] The required Node.js version is: 26.1.0
+[ WARN ] Your current Node.js version is: 24.18.0. Native addons may not build properly.
+[ INFO ] Install the required Node.js version via a Node verssion manager (e.g., nvm, n, volta) or download it from https://nodejs.org/en/download/releases/.
+[ INFO ] The latest npm version is: 12.0.2
+[ WARN ] The current npm version is: 11.16.0
 ```
 
 ## API Reference
@@ -24,18 +39,10 @@ Options
 
 | Name        | Type                                                                                                                                                          | Description                                                                              |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| version     | `string \| "latest" \| "stable"`                                                                                                                              | Runtime version                                                                          |
-| flavor      | `"normal" \| "sdk"`                                                                                                                                           | Runtime flavor                                                                           |
-| platform    | `"linux" \| "osx" \| "win"`                                                                                                                                   | Host platform                                                                            |
-| arch        | `"ia32" \| "x64" \| "arm64"`                                                                                                                                  | Host architecture                                                                        |
-| downloadUrl | `"https://dl.nwjs.io" \| "https://npm.taobao.org/mirrors/nwjs" \| https://npmmirror.com/mirrors/nwjs \| "https://github.com/corwin-of-amber/nw.js/releases/"` | Download server. Supports file systems too (for example `file:///home/user/nwjs_mirror`) |
+| version     | `string \| "latest" \| "stable"`                                                                                                                              | 
 | manifestUrl | `"https://nwjs.io/versions.json" \| "https://raw.githubusercontent.com/nwutils/nw-builder/main/src/util/osx.arm.versions.json"`                               | Versions manifest                                                                        |
 | srcDir      | `string`                                                                                                                                                      | Directory containing the application's `package.json` (used to read `devEngines`)        |
 | cacheDir    | `string`                                                                                                                                                      | Directory to cache NW binaries                                                           |
-| cache       | `boolean`                                                                                                                                                     | If true the existing cache is used. Otherwise it removes and redownloads it.             |
-| ffmpeg      | `boolean`                                                                                                                                                     | If true the chromium ffmpeg is replaced by community version with proprietary codecs.    |
-| nativeAddon | `boolean`                                                                                                                                                     | If true download NW.js Node headers.                                                     |
-| shaSum      | `boolean`                                                                                                                                                     | Flag to enable/disable shasum checks.                                                    |
 
 ## Contributing
 
@@ -48,8 +55,3 @@ Options
 
 - npm trusted publishing is used for releases
 - a package is released when a maintainer creates a release note for a specific version
-
-## Roadmap
-
-- [ ] detect() - only checks the environment
-- [ ] configure() - changes the environment
